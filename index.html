@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Raycaster — pure JS 3D</title>
+<style>
+  body{margin:0;background:#000;display:flex;flex-direction:column;align-items:center;font-family:monospace;color:#0f0}
+  #hud{padding:6px;font-size:13px;opacity:.8}
+  canvas{image-rendering:pixelated;border:2px solid #0f0}
+  #mini{position:fixed;top:10px;right:10px;border:1px solid #0f0}
+</style>
+</head>
+<body>
+<div id="hud">WASD move · ←/→ or mouse-drag look · fps: <span id="fps">0</span></div>
+<canvas id="c" width="480" height="300"></canvas>
+<canvas id="mini" width="160" height="160"></canvas>
+
+<script>
+// ---- Pure JS raycasting engine (Wolfenstein-style), no libraries ----
+const ctx = document.getElementById('c').getContext('2d');
+const W = 480, H = 300, FOV = Math.PI/3, NUM_RAYS = W, MAX_DEPTH = 20;
+const mctx = document.getElementById('mini').getContext('2d');
+
+// 1 = wall, 0 = empty
+const MAP = [
+"1111111111",
+"1000000001",
+"1011110101",
+"1010000101",
+"1010111101",
+"1000100001",
+"1110100011",
+"1000100001",
+"1011111101",
+"1111111111",
+];
+const MAPW = MAP[0].length, MAPH = MAP.length, TILE = 16;
+
+let px = 1.5*TILE, py = 1.5*TILE, pa = 0; // player x,y,angle
+const keys = {};
+document.addEventListener('keydown', e=>keys[e.key.toLowerCase()]=true);
+document.addEventListener('keyup', e=>keys[e.key.toLowerCase()]=false);
+
+let dragging=false, lastX=0;
+document.addEventListener('mousedown', e=>{dragging=true; lastX=e.clientX;});
+document.addEventListener('mouseup', ()=>dragging=false);
+document.addEventListener('mousemove', e=>{
+  if(dragging){ pa += (e.clientX-lastX)*0.003; lastX=e.clientX; }
+});
+
+function isWall(x,y){
+  const mx=Math.floor(x/TILE), my=Math.floor(y/TILE);
+  if(my<0||my>=MAPH||mx<0||mx>=MAPW) return true;
+  return MAP[my][mx]==='1';
+}
+
+function movePlayer(dt){
+  const speed = 90*dt, rot = 2.2*dt;
+  if(keys['a']) pa -= rot;
+  if(keys['d']) pa += rot;
+  if(keys['arrowleft']) pa -= rot;
+  if(keys['arrowright']) pa += rot;
+  let dx=0, dy=0;
+  if(keys['w']){ dx+=Math.cos(pa)*speed; dy+=Math.sin(pa)*speed; }
+  if(keys['s']){ dx-=Math.cos(pa)*speed; dy-=Math.sin(pa)*speed; }
+  if(!isWall(px+dx, py)) px+=dx;
+  if(!isWall(px, py+dy)) py+=dy;
+}
+
+// Digital Differential Analysis-style raycast (step-based)
+function castRay(angle){
+  const sin=Math.sin(angle), cos=Math.cos(angle);
+  let dist=0;
+  for(let d=0; d<MAX_DEPTH*TILE; d+=1){
+    const x=px+cos*d, y=py+sin*d;
+    if(isWall(x,y)) return d;
+  }
+  return MAX_DEPTH*TILE;
+}
+
+function render(){
+  ctx.fillStyle='#333'; ctx.fillRect(0,0,W,H/2);       // ceiling
+  ctx.fillStyle='#555'; ctx.fillRect(0,H/2,W,H/2);      // floor
+
+  for(let i=0;i<NUM_RAYS;i++){
+    const rayAngle = pa - FOV/2 + (i/NUM_RAYS)*FOV;
+    let dist = castRay(rayAngle);
+    dist *= Math.cos(rayAngle - pa); // fix fisheye
+    const wallH = Math.min(H, (TILE*280)/(dist+0.0001));
+    const shade = Math.max(0, 255 - dist*3.2);
+    ctx.fillStyle = `rgb(${shade*0.2|0},${shade|0},${shade*0.2|0})`;
+    ctx.fillRect(i, (H-wallH)/2, 1, wallH);
+  }
+
+  // minimap
+  mctx.fillStyle='#000'; mctx.fillRect(0,0,160,160);
+  for(let y=0;y<MAPH;y++) for(let x=0;x<MAPW;x++)
+    if(MAP[y][x]==='1'){ mctx.fillStyle='#0f0'; mctx.fillRect(x*16,y*16,15,15); }
+  mctx.fillStyle='#f00';
+  mctx.beginPath(); mctx.arc(px*1.6/TILE*TILE/10*10, py*1.6, 3,0,7); mctx.fill();
+  mctx.fillRect(px*16/TILE-2, py*16/TILE-2, 4,4);
+}
+
+let last=performance.now(), frames=0, fpsTimer=0;
+function loop(now){
+  const dt=(now-last)/1000; last=now;
+  movePlayer(dt);
+  render();
+  frames++; fpsTimer+=dt;
+  if(fpsTimer>0.5){ document.getElementById('fps').textContent=(frames/fpsTimer).toFixed(0); frames=0; fpsTimer=0; }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
